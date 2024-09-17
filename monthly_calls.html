@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monthly Calls Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="dashboard-title">Monthly Calls Dashboard</h1>
+            <div class="header-buttons">
+                <button class="btn btn-dark" id="backBtn">Back</button>
+                <button class="btn" id="settingsBtn">⚙️</button>
+            </div>
+        </div>
+
+        <div id="currentMonth" class="current-date"></div>
+
+        <div class="card">
+            <h2>Monthly Call Summary</h2>
+            <div class="call-summary">
+                <div class="summary-row firstrow">
+                    <div class="summary-card toatalcalls" id="totalCallsCard">
+                        <div class="number" id="totalCallsSummary">0</div>
+                        <div>Total Calls</div>
+                    </div>
+                </div>
+                <div class="summary-row secondrow">
+                    <div class="summary-card answredcalls notinterestedcard">
+                        <div class="number green" id="notInterestedCallsSummary">0</div>
+                        <div>Not Interested</div>
+                    </div>
+                    <div class="summary-card unanswredcalls">
+                        <div class="number red" id="unansweredCallsSummary">0</div>
+                        <div>Unanswered</div> 
+                    </div>
+                </div>
+                <div class="summary-row thirdrow">
+                    <div class="summary-card callbackcalls callbackcard" id="callbackCard">
+                        <div class="number orange" id="callBackCallsSummary">0</div>
+                        <div>Callback</div>
+                    </div>
+                    <div class="summary-card intreastedcalls interestedcard" id="interestedCard">
+                        <div class="number blue" id="interestedCallsSummary">0</div>
+                        <div>Interested</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card call-details-card" id="callDetailsCard" style="display: none;">
+            <div class="card-header">
+                <h2>Monthly Call Details</h2>
+            </div>
+            <div class="table-responsive">
+                <table class="call-details-table">
+                    <thead>
+                        <tr>
+                            <th>Contact</th>
+                            <th>Status</th>
+                            <th>Duration</th>
+                            <th>Date</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="callDetailsBody">
+                        <!-- Call details will be populated here by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer">
+                <div class="button-container">
+                    <button id="clearDataBtn" class="btn btn-danger action-btn">Clear</button>
+                    <button id="printBtn" class="btn btn-primary action-btn">Print</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="floating-image" id="dialpadTrigger">
+        <img src="images/telephone.png" alt="Floating Image">
+    </div>
+
+    <script src="script.js"></script>
+    <script>
+        // Additional JavaScript for monthly calls page
+        document.addEventListener('DOMContentLoaded', function() {
+            // Override the updateDashboard function to show monthly data
+            window.updateDashboard = function() {
+                const now = new Date();
+                const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                
+                const startDate = firstDayOfMonth.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                const endDate = lastDayOfMonth.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                
+                database.ref('calls').orderByChild('timestamp').once('value').then((snapshot) => {
+                    const data = snapshot.val();
+                    if (data) {
+                        callData.details = Object.values(data).filter(call => {
+                            const callDate = call.dateTime.split(' ')[0];
+                            return callDate >= startDate && callDate <= endDate;
+                        });
+                        callData.details.sort((a, b) => b.timestamp - a.timestamp);
+                        updateDashboardUI(callData);
+                        updateSummaryNumbers();
+                    }
+                });
+            };
+
+            // Call updateDashboard to load monthly data
+            updateDashboard();
+
+            // Update the current month display
+            const currentMonth = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long' });
+            document.getElementById('currentMonth').textContent = currentMonth;
+
+            // Override the clearAllData function to clear monthly data
+            window.clearAllData = function() {
+                const currentStatus = document.querySelector('.call-details-card').dataset.currentStatus;
+                let confirmMessage = "Are you sure you want to clear all of this month's data? This action cannot be undone.";
+                
+                if (currentStatus !== 'Total') {
+                    confirmMessage = `Are you sure you want to clear all of this month's ${currentStatus} calls? This action cannot be undone.`;
+                }
+
+                if (confirm(confirmMessage)) {
+                    const now = new Date();
+                    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                    const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+                    
+                    const startDate = firstDayOfMonth.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                    const endDate = lastDayOfMonth.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                    
+                    database.ref('calls').orderByChild('dateTime').startAt(startDate).endAt(endDate + '\uf8ff').once('value', snapshot => {
+                        const updates = {};
+                        snapshot.forEach(child => {
+                            if (currentStatus === 'Total' || child.val().status === currentStatus) {
+                                updates[child.key] = null;
+                            }
+                        });
+                        database.ref('calls').update(updates)
+                            .then(() => {
+                                console.log(`This month's ${currentStatus} calls have been cleared from Firebase`);
+                                updateDashboard();
+                            })
+                            .catch((error) => {
+                                console.error('Error clearing data:', error);
+                            });
+                    });
+                }
+            };
+
+            // Update the event listener for the back button
+            const backBtn = document.getElementById('backBtn');
+            if (backBtn) {
+                backBtn.addEventListener('click', function() {
+                    window.close(); // Close the current window
+                });
+            }
+
+            // Add event listeners for summary cards
+            const addClickListener = (id, status) => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.addEventListener('click', () => toggleCallDetails(status));
+                }
+            };
+
+            addClickListener('totalCallsCard', 'Total');
+            addClickListener('notInterestedCallsSummary', 'Not Interested');
+            addClickListener('unansweredCallsSummary', 'Unanswered');
+            addClickListener('callBackCallsSummary', 'Callback');
+            addClickListener('interestedCallsSummary', 'Interested');
+
+            // Function to toggle call details
+            function toggleCallDetails(status) {
+                const callDetailsCard = document.getElementById('callDetailsCard');
+                if (callDetailsCard.style.display === 'none' || callDetailsCard.dataset.currentStatus !== status) {
+                    showCallDetails(status);
+                } else {
+                    callDetailsCard.style.display = 'none';
+                }
+            }
+
+            // Update the showCallDetails function
+            function showCallDetails(status) {
+                const callDetailsBody = document.getElementById('callDetailsBody');
+                callDetailsBody.innerHTML = '';
+
+                let filteredCalls = callData.details;
+                if (status !== 'Total') {
+                    filteredCalls = callData.details.filter(call => call.status === status);
+                }
+
+                // Sort calls by timestamp in descending order (most recent first)
+                filteredCalls.sort((a, b) => b.timestamp - a.timestamp);
+
+                filteredCalls.forEach(call => {
+                    const row = document.createElement('tr');
+                    const callDate = new Date(call.timestamp);
+                    const date = callDate.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
+                    const time = callDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                    row.innerHTML = `
+                        <td>${call.number}</td>
+                        <td>${call.status}</td>
+                        <td>${call.duration || 'N/A'}</td>
+                        <td>${date}</td>
+                        <td>${time}</td>
+                    `;
+                    callDetailsBody.appendChild(row);
+                });
+
+                const callDetailsCard = document.getElementById('callDetailsCard');
+                callDetailsCard.style.display = 'block';
+                callDetailsCard.dataset.currentStatus = status;
+                document.querySelector('.call-details-card h2').textContent = `${status} Call Details`;
+            }
+
+            // Add event listener for clear data button
+            const clearDataBtn = document.getElementById('clearDataBtn');
+            if (clearDataBtn) {
+                clearDataBtn.addEventListener('click', clearAllData);
+            }
+
+            // Add event listener for print button
+            const printBtn = document.getElementById('printBtn');
+            if (printBtn) {
+                printBtn.addEventListener('click', printCallDetails);
+            }
+
+            // Add event listener for settings button
+            const settingsBtn = document.getElementById('settingsBtn');
+            if (settingsBtn) {
+                settingsBtn.addEventListener('click', function() {
+                    alert('Settings clicked');
+                });
+            }
+
+            // Add event listener for dialpad trigger
+            const dialpadTrigger = document.getElementById('dialpadTrigger');
+            if (dialpadTrigger) {
+                dialpadTrigger.addEventListener('click', openDialpad);
+            }
+        });
+    </script>
+</body>
+</html>
+
+
